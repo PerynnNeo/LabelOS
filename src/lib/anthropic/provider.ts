@@ -98,13 +98,19 @@ class LiveAnthropicProvider implements AnthropicProvider {
 let liveProvider: LiveAnthropicProvider | null = null;
 
 /**
- * Real provider when a key is configured AND DEMO_MODE is off; otherwise the
- * deterministic mock. A missing key must never crash the app — the mock path is
- * always available.
+ * Real provider whenever an Anthropic key is configured; otherwise the
+ * deterministic mock.
+ *
+ * Note (spec §1.3/§1.4): DEMO_MODE does NOT gate Claude. Demo mode governs
+ * Shopify/supplier illustrative data and seeding — but garment analysis, outfit
+ * evaluation, revision, gap explanation, concept generation, specification and
+ * store copy must call the real Claude API whenever the key is present, even in
+ * demo mode. A missing key must never crash the app — the mock path is always
+ * available so the whole workflow stays demonstrable without credentials.
  */
 export function getAnthropicProvider(): AnthropicProvider {
   const env = getEnv();
-  if (isAnthropicConfigured(env) && !env.DEMO_MODE) {
+  if (isAnthropicConfigured(env)) {
     if (!liveProvider) liveProvider = new LiveAnthropicProvider();
     return liveProvider;
   }

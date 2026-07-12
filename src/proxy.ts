@@ -57,6 +57,13 @@ function unauthorizedJson(): NextResponse {
 export default async function proxy(request: NextRequest) {
   const { pathname } = request.nextUrl;
 
+  // AUTH_MODE=open disables the access-code gate entirely (local/demo). Read
+  // process.env directly — the proxy runs on the Edge runtime and must not
+  // import the server-only env module.
+  if (process.env.AUTH_MODE === "open") {
+    return NextResponse.next();
+  }
+
   if (pathname.startsWith("/api")) {
     if (PUBLIC_API_PATHS.has(pathname)) {
       return NextResponse.next();

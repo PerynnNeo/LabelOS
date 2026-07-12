@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { toast } from "sonner";
+import { Button } from "@/components/lo";
 import type { ApiResult } from "@/lib/api";
 
 interface LoginFormProps {
@@ -57,7 +58,7 @@ export function LoginForm({ nextPath }: LoginFormProps) {
     <form onSubmit={handleSubmit} noValidate>
       <label
         htmlFor="access-code"
-        className="block text-xs font-medium uppercase tracking-widest text-muted"
+        className="block text-[11px] font-semibold uppercase tracking-[0.08em] text-muted"
       >
         Access code
       </label>
@@ -70,25 +71,30 @@ export function LoginForm({ nextPath }: LoginFormProps) {
         required
         value={accessCode}
         onChange={(event) => setAccessCode(event.target.value)}
-        className="mt-2 w-full border border-line bg-paper px-3 py-2.5 text-sm text-ink outline-none transition-colors placeholder:text-muted/60 focus:border-accent"
+        className="mt-2 h-11 w-full rounded-[10px] border border-[rgba(0,0,0,0.12)] bg-surface px-3.5 text-[14px] text-ink outline-none transition-colors placeholder:text-faint focus:border-accent focus:ring-2 focus:ring-accent/20"
         placeholder="Your private access code"
         aria-invalid={error ? true : undefined}
         aria-describedby={error ? "login-error" : undefined}
       />
 
       {error ? (
-        <p id="login-error" role="alert" className="mt-3 text-sm text-danger">
+        <p
+          id="login-error"
+          role="alert"
+          className="mt-3 text-[13px] text-[#C4271B]"
+        >
           {error}
         </p>
       ) : null}
 
-      <button
+      <Button
         type="submit"
-        disabled={submitting || accessCode.length === 0}
-        className="mt-6 w-full bg-ink px-4 py-2.5 text-sm font-medium tracking-wide text-paper transition-colors hover:bg-accent disabled:cursor-not-allowed disabled:opacity-50"
+        loading={submitting}
+        disabled={accessCode.length === 0}
+        className="mt-6 w-full"
       >
         {submitting ? "Checking…" : "Log in"}
-      </button>
+      </Button>
     </form>
   );
 }

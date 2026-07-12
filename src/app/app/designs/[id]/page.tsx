@@ -1,11 +1,6 @@
 import { redirect } from "next/navigation";
 import Link from "next/link";
-import {
-  ArrowLeft,
-  FileWarning,
-  Printer,
-  ShoppingBag,
-} from "lucide-react";
+import { ArrowLeft, Printer } from "lucide-react";
 import { getSessionFromCookies } from "@/lib/auth/require-session";
 import { SupabaseNotConfiguredError } from "@/lib/supabase/admin";
 import { getDesign, type DesignRow } from "@/lib/supabase/repositories";
@@ -13,21 +8,24 @@ import { newDesignSchema, type NewDesign } from "@/lib/domain/schemas";
 import { SKETCH_DISCLAIMER } from "@/lib/domain/flat-sketch";
 import {
   Card,
-  CardContent,
   CardHeader,
   CardTitle,
-} from "@/components/ui/card";
-import { Badge, type BadgeVariant } from "@/components/ui/badge";
-import { EmptyState } from "@/components/empty-state";
+  CardRow,
+  Chip,
+  EmptyState,
+  Pill,
+  SetupCard,
+} from "@/components/lo";
+import { type Tone } from "@/lib/ui/tokens";
 import { formatCurrency, formatDate } from "@/lib/utils";
 
 /**
- * Design overview (spec sections 16–18, 20–21).
+ * Design overview.
  *
- * Session-protected server component summarising one proposed design: its
- * brief, the code-computed costing model, the flat sketch, and the downstream
- * status (tech pack / listing / Shopify draft), with links to the printable
- * tech pack and back to the collection studio.
+ * Session-protected server component summarising one proposed design: its brief,
+ * the code-computed costing model, the flat sketch, and downstream status (tech
+ * pack / listing / Shopify draft), with links to the printable tech pack and
+ * back to the collection studio.
  *
  * Reads the design directly from the service-role repository layer → Node.
  */
@@ -36,10 +34,10 @@ export const runtime = "nodejs";
 const UUID_RE =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
-const RISK_VARIANT: Record<NewDesign["estimatedRisk"], BadgeVariant> = {
-  low: "success",
-  medium: "warning",
-  high: "danger",
+const RISK_TONE: Record<NewDesign["estimatedRisk"], Tone> = {
+  low: { label: "Low risk", fg: "#248A3D", bg: "rgba(52,199,89,0.14)" },
+  medium: { label: "Medium risk", fg: "#B25000", bg: "rgba(255,149,0,0.15)" },
+  high: { label: "High risk", fg: "#C4271B", bg: "rgba(255,59,48,0.14)" },
 };
 
 function designImageUrl(design: DesignRow): string | null {
@@ -58,7 +56,11 @@ function humanizeStatus(status: string): string {
   return spaced.charAt(0).toUpperCase() + spaced.slice(1);
 }
 
-function StepStatus({
+function capitalize(value: string): string {
+  return value.charAt(0).toUpperCase() + value.slice(1);
+}
+
+function StatusRow({
   label,
   done,
   doneLabel,
@@ -70,40 +72,66 @@ function StepStatus({
   pendingLabel: string;
 }) {
   return (
-    <div className="flex items-center justify-between gap-4 py-2.5">
-      <span className="text-sm text-ink">{label}</span>
-      <Badge variant={done ? "success" : "neutral"} dot>
-        {done ? doneLabel : pendingLabel}
-      </Badge>
+    <div className="flex items-center justify-between gap-3 border-t border-[rgba(0,0,0,0.05)] px-4 py-[11px]">
+      <span className="text-[13px] text-ink2">{label}</span>
+      {done ? (
+        <Pill
+          dot
+          fg="#248A3D"
+          bg="rgba(52,199,89,0.15)"
+          label={doneLabel}
+        />
+      ) : (
+        <Pill dot fg="#6E6E73" bg="rgba(120,120,128,0.14)" label={pendingLabel} />
+      )}
     </div>
   );
 }
 
-function DefinitionRow({
-  term,
-  children,
+function CostTile({
+  label,
+  value,
+  accent,
+  positive,
 }: {
-  term: string;
-  children: React.ReactNode;
+  label: string;
+  value: string;
+  accent?: boolean;
+  positive?: boolean;
 }) {
   return (
-    <div className="flex flex-col gap-1 py-3 sm:flex-row sm:gap-6">
-      <dt className="text-xs font-medium uppercase tracking-[0.15em] text-muted sm:w-40 sm:shrink-0">
-        {term}
-      </dt>
-      <dd className="text-sm leading-relaxed text-ink">{children}</dd>
+    <div
+      className="flex-1 rounded-[11px] px-3.5 py-3"
+      style={{
+        background: positive
+          ? "rgba(52,199,89,0.1)"
+          : accent
+            ? "rgba(10,132,255,0.08)"
+            : "#F5F5F7",
+      }}
+    >
+      <div
+        className="text-[11px] font-medium"
+        style={{ color: positive ? "#248A3D" : "#8E8E93" }}
+      >
+        {label}
+      </div>
+      <div
+        className="mt-1 text-[19px] font-bold tracking-[-0.01em]"
+        style={{ color: positive ? "#248A3D" : "#1D1D1F" }}
+      >
+        {value}
+      </div>
     </div>
   );
 }
 
-function TagList({ items }: { items: string[] }) {
+function TagValue({ items }: { items: string[] }) {
   if (items.length === 0) return <span className="text-muted">—</span>;
   return (
-    <div className="flex flex-wrap gap-1.5">
+    <div className="flex flex-wrap justify-end gap-1.5">
       {items.map((item, index) => (
-        <Badge key={index} variant="neutral">
-          {item}
-        </Badge>
+        <Chip key={index}>{item}</Chip>
       ))}
     </div>
   );
@@ -128,10 +156,9 @@ export default async function DesignOverviewPage({
     if (error instanceof SupabaseNotConfiguredError) {
       return (
         <div className="mx-auto w-full max-w-2xl">
-          <EmptyState
-            icon={FileWarning}
-            title="Backend not configured"
-            description="Set NEXT_PUBLIC_SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY, run the migration, then reload."
+          <SetupCard
+            service="Supabase"
+            message="Set NEXT_PUBLIC_SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY, run the migration, then reload."
           />
         </div>
       );
@@ -143,13 +170,13 @@ export default async function DesignOverviewPage({
     return (
       <div className="mx-auto w-full max-w-2xl">
         <EmptyState
-          icon={FileWarning}
+          icon="alert-triangle"
           title="Design not found"
           description="This design may have been removed. Return to the studio to continue."
           action={
             <Link
               href="/app/collections"
-              className="inline-flex h-10 items-center gap-2 border border-line bg-surface px-5 text-sm font-medium tracking-wide text-ink transition-colors hover:border-ink"
+              className="inline-flex h-9 items-center gap-2 rounded-[9px] border border-[rgba(0,0,0,0.12)] bg-surface px-4 text-[13px] font-semibold text-ink transition-colors hover:bg-[#FAFAFA]"
             >
               Back to collections
             </Link>
@@ -169,61 +196,85 @@ export default async function DesignOverviewPage({
   const hasListing = design.listing_payload !== null;
   const hasShopifyDraft = Boolean(design.shopify_product_gid);
 
+  const marginPct = costing
+    ? `${Math.round(costing.targetGrossMargin * 100)}%`
+    : "—";
+  const perUnit = costing
+    ? formatCurrency(
+        costing.detailedEstimate.maximumFactoryCost,
+        costing.currency,
+      )
+    : "—";
+
   return (
-    <div className="flex flex-col gap-8">
+    <div className="flex flex-col gap-7">
       {/* Header */}
       <div className="flex flex-col gap-4">
         <Link
           href={studioHref}
-          className="inline-flex items-center gap-2 text-sm text-muted transition-colors hover:text-ink"
+          className="inline-flex items-center gap-2 text-[13px] text-muted transition-colors hover:text-ink"
         >
           <ArrowLeft aria-hidden className="size-4" />
           Back to the studio
         </Link>
         <div className="flex flex-wrap items-start justify-between gap-4">
           <div className="flex flex-col gap-2">
-            <span className="eyebrow">Proposed design</span>
-            <h1 className="font-display text-3xl leading-tight text-ink sm:text-4xl">
+            <span className="text-[11px] font-semibold uppercase tracking-[0.16em] text-accent">
+              Proposed design · draft
+            </span>
+            <h1 className="font-display text-[32px] leading-tight text-ink">
               {brief?.name ?? design.name}
             </h1>
             <div className="flex flex-wrap items-center gap-2">
-              <Badge variant="accent">{humanizeStatus(design.status)}</Badge>
+              <Pill
+                fg="#0863C4"
+                bg="rgba(10,132,255,0.12)"
+                label={humanizeStatus(design.status)}
+              />
               {brief ? (
-                <Badge variant="neutral">
-                  {brief.category.charAt(0).toUpperCase() +
-                    brief.category.slice(1)}
-                </Badge>
+                <Pill
+                  fg="#48484A"
+                  bg="rgba(120,120,128,0.14)"
+                  label={capitalize(brief.category)}
+                />
               ) : null}
-              {brief ? (
-                <Badge variant={RISK_VARIANT[brief.estimatedRisk]}>
-                  {brief.estimatedRisk.charAt(0).toUpperCase() +
-                    brief.estimatedRisk.slice(1)}{" "}
-                  risk
-                </Badge>
-              ) : null}
+              {brief ? <Pill tone={RISK_TONE[brief.estimatedRisk]} /> : null}
             </div>
           </div>
-          <div className="flex flex-wrap items-center gap-3">
-            <Link
-              href={`/app/designs/${design.id}/print`}
-              className="inline-flex h-10 items-center gap-2 border border-line bg-surface px-5 text-sm font-medium tracking-wide text-ink transition-colors hover:border-ink"
-            >
-              <Printer aria-hidden className="size-4" />
-              Tech pack print view
-            </Link>
-          </div>
+          <Link
+            href={`/app/designs/${design.id}/print`}
+            className="inline-flex h-9 items-center gap-2 rounded-[9px] border border-[rgba(0,0,0,0.12)] bg-surface px-3.5 text-[13px] font-semibold text-ink transition-colors hover:bg-[#FAFAFA]"
+          >
+            <Printer aria-hidden className="size-4" />
+            Tech pack print view
+          </Link>
         </div>
       </div>
 
-      <div className="grid gap-8 lg:grid-cols-[minmax(0,320px)_minmax(0,1fr)]">
+      {/* Honesty banner */}
+      <div className="flex items-start gap-3 rounded-[13px] border border-[rgba(0,0,0,0.05)] bg-[rgba(120,120,128,0.06)] px-4 py-3">
+        <div className="text-[12.5px] leading-[1.45] text-ink3">
+          Sketches, tech packs and costings here are{" "}
+          <span className="font-[650] text-ink2">drafts for your review</span> —
+          a starting point for a real product developer, not manufacturing-ready
+          specs.
+        </div>
+      </div>
+
+      <div className="grid gap-6 lg:grid-cols-[minmax(0,340px)_minmax(0,1fr)]">
         {/* Left column — sketch + downstream status */}
         <div className="flex flex-col gap-6">
           <Card>
             <CardHeader>
               <CardTitle>Flat sketch</CardTitle>
+              <Pill
+                fg="#B25000"
+                bg="rgba(255,149,0,0.14)"
+                label="Draft"
+              />
             </CardHeader>
-            <CardContent className="flex flex-col gap-3">
-              <div className="aspect-[4/5] w-full overflow-hidden border border-line bg-paper">
+            <div className="px-4 pb-4">
+              <div className="aspect-[4/5] w-full overflow-hidden rounded-[12px] border border-line bg-[#F5F5F7]">
                 {imageUrl ? (
                   // eslint-disable-next-line @next/next/no-img-element
                   <img
@@ -232,50 +283,52 @@ export default async function DesignOverviewPage({
                     className="size-full object-contain"
                   />
                 ) : (
-                  <div className="flex size-full items-center justify-center px-6 text-center text-sm text-muted">
-                    No sketch rendered yet.
+                  <div className="flex size-full items-center justify-center px-6 text-center font-display text-[15px] text-faint">
+                    No sketch rendered yet
                   </div>
                 )}
               </div>
-              <p className="text-xs text-muted">{SKETCH_DISCLAIMER}.</p>
-            </CardContent>
+              <p className="mt-2 text-[11.5px] text-muted">
+                {SKETCH_DISCLAIMER}.
+              </p>
+            </div>
           </Card>
 
           <Card>
             <CardHeader>
               <CardTitle>Production status</CardTitle>
             </CardHeader>
-            <CardContent className="divide-y divide-line py-1">
-              <StepStatus
+            <div className="pb-1">
+              <StatusRow
                 label="Draft tech pack"
                 done={hasTechPack}
                 doneLabel="Draft ready"
                 pendingLabel="Not generated"
               />
-              <StepStatus
+              <StatusRow
                 label="Product listing"
                 done={hasListing}
                 doneLabel="Ready"
                 pendingLabel="Not generated"
               />
-              <StepStatus
+              <StatusRow
                 label="Shopify draft"
                 done={hasShopifyDraft}
                 doneLabel="Draft created"
                 pendingLabel="Not created"
               />
-            </CardContent>
-          </Card>
-
-          {hasShopifyDraft ? (
-            <div className="flex items-start gap-2.5 border border-line bg-surface px-4 py-3 text-sm text-muted">
-              <ShoppingBag aria-hidden className="mt-0.5 size-4 shrink-0" />
-              <span className="min-w-0 break-all">
-                Shopify product GID:{" "}
-                <span className="text-ink">{design.shopify_product_gid}</span>
-              </span>
             </div>
-          ) : null}
+            {hasShopifyDraft ? (
+              <div className="border-t border-[rgba(0,0,0,0.05)] px-4 py-3">
+                <div className="text-[11px] font-medium uppercase tracking-[0.04em] text-muted">
+                  Shopify product GID
+                </div>
+                <div className="mt-1 break-all font-mono text-[11.5px] text-ink2">
+                  {design.shopify_product_gid}
+                </div>
+              </div>
+            ) : null}
+          </Card>
         </div>
 
         {/* Right column — brief + costing */}
@@ -284,164 +337,152 @@ export default async function DesignOverviewPage({
             <CardHeader>
               <CardTitle>Design brief</CardTitle>
             </CardHeader>
-            <CardContent>
-              {brief ? (
-                <dl className="divide-y divide-line">
-                  <DefinitionRow term="Problem solved">
-                    {brief.problemSolved}
-                  </DefinitionRow>
-                  <DefinitionRow term="Target customer">
-                    {brief.targetCustomer}
-                  </DefinitionRow>
-                  <DefinitionRow term="Silhouette">
-                    {brief.silhouette}
-                  </DefinitionRow>
-                  <DefinitionRow term="Colour">
+            {brief ? (
+              <div>
+                <CardRow label="Problem solved" value={brief.problemSolved} />
+                <CardRow label="Target customer" value={brief.targetCustomer} />
+                <CardRow label="Silhouette" value={brief.silhouette} />
+                <CardRow
+                  label="Colour"
+                  value={
                     <span className="inline-flex items-center gap-2">
                       <span
                         aria-hidden
-                        className="inline-block size-4 shrink-0 border border-line"
+                        className="inline-block size-4 rounded-[4px] border border-black/10"
                         style={{ backgroundColor: brief.colourHex }}
                       />
                       {brief.colour}
                     </span>
-                  </DefinitionRow>
-                  <DefinitionRow term="Construction">
-                    {brief.constructionDirection}
-                  </DefinitionRow>
-                  <DefinitionRow term="Fabric">
-                    <TagList items={brief.fabricRequirements} />
-                  </DefinitionRow>
-                  <DefinitionRow term="Unlocks looks">
-                    {brief.outfitIdsUnlocked.length > 0
+                  }
+                />
+                <CardRow
+                  label="Construction"
+                  value={brief.constructionDirection}
+                />
+                <CardRow
+                  label="Fabric"
+                  value={<TagValue items={brief.fabricRequirements} />}
+                />
+                <CardRow
+                  label="Unlocks looks"
+                  value={
+                    brief.outfitIdsUnlocked.length > 0
                       ? `${brief.outfitIdsUnlocked.length} existing outfit${
                           brief.outfitIdsUnlocked.length === 1 ? "" : "s"
                         }`
-                      : "—"}
-                  </DefinitionRow>
-                  <DefinitionRow term="Verified data">
-                    <TagList items={brief.verifiedData} />
-                  </DefinitionRow>
-                  <DefinitionRow term="Assumed data">
-                    <TagList items={brief.assumedData} />
-                  </DefinitionRow>
-                  {brief.originalitySafeguards.length > 0 ? (
-                    <DefinitionRow term="Originality">
-                      <ul className="flex list-disc flex-col gap-1 pl-4 marker:text-line">
-                        {brief.originalitySafeguards.map((item, index) => (
-                          <li key={index}>{item}</li>
-                        ))}
-                      </ul>
-                    </DefinitionRow>
-                  ) : null}
-                  {brief.openQuestions.length > 0 ? (
-                    <DefinitionRow term="Open questions">
-                      <ul className="flex list-disc flex-col gap-1 pl-4 marker:text-line">
+                      : "—"
+                  }
+                />
+                <CardRow
+                  label="Verified data"
+                  value={<TagValue items={brief.verifiedData} />}
+                />
+                <CardRow
+                  label="Assumed data"
+                  value={<TagValue items={brief.assumedData} />}
+                />
+                {brief.openQuestions.length > 0 ? (
+                  <CardRow
+                    label="Open questions"
+                    value={
+                      <ul className="flex list-disc flex-col gap-1 pl-4 text-left marker:text-faint">
                         {brief.openQuestions.map((item, index) => (
                           <li key={index}>{item}</li>
                         ))}
                       </ul>
-                    </DefinitionRow>
-                  ) : null}
-                </dl>
-              ) : (
-                <p className="text-sm text-muted">
-                  This design does not yet have a complete brief. Run gap
-                  detection in the studio to generate one.
-                </p>
-              )}
-            </CardContent>
+                    }
+                  />
+                ) : null}
+              </div>
+            ) : (
+              <p className="px-4 pb-4 text-[13px] text-muted">
+                This design does not yet have a complete brief. Run gap
+                detection in the studio to generate one.
+              </p>
+            )}
           </Card>
 
           <Card>
             <CardHeader>
-              <CardTitle>Costing</CardTitle>
+              <CardTitle>Costing &amp; margin</CardTitle>
             </CardHeader>
-            <CardContent>
+            <div className="px-4 pb-4">
               {costing ? (
-                <div className="flex flex-col gap-6">
-                  <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
-                    <div className="flex flex-col gap-1 border border-line bg-paper px-4 py-3">
-                      <span className="text-xs font-medium uppercase tracking-[0.15em] text-muted">
-                        Target retail
-                      </span>
-                      <span className="font-display text-xl text-ink">
-                        {formatCurrency(
-                          costing.targetRetailPrice,
-                          costing.currency,
-                        )}
-                      </span>
-                    </div>
-                    <div className="flex flex-col gap-1 border border-line bg-paper px-4 py-3">
-                      <span className="text-xs font-medium uppercase tracking-[0.15em] text-muted">
-                        Target margin
-                      </span>
-                      <span className="font-display text-xl text-ink">
-                        {Math.round(costing.targetGrossMargin * 100)}%
-                      </span>
-                    </div>
-                    <div className="flex flex-col gap-1 border border-accent/40 bg-accent/5 px-4 py-3">
-                      <span className="text-xs font-medium uppercase tracking-[0.15em] text-accent">
-                        Max landed cost
-                      </span>
-                      <span className="font-display text-xl text-ink">
+                <div className="flex flex-col gap-4">
+                  <p className="text-[11.5px] text-muted">
+                    Computed by code as target retail × (1 − target margin), less
+                    packaging, freight, duty, sample and return allowances. Verify
+                    against supplier quotes.
+                  </p>
+                  <div className="flex gap-3">
+                    <CostTile
+                      label="Retail"
+                      value={formatCurrency(
+                        costing.targetRetailPrice,
+                        costing.currency,
+                      )}
+                    />
+                    <CostTile label="Gross margin" value={marginPct} positive />
+                    <CostTile label="Max factory cost" value={perUnit} />
+                  </div>
+
+                  <div>
+                    <div className="mb-1 text-[11px] font-semibold uppercase tracking-[0.04em] text-muted">
+                      Max landed cost{" "}
+                      <span className="font-normal normal-case text-ink2">
                         {formatCurrency(
                           costing.maximumLandedCost,
                           costing.currency,
                         )}
                       </span>
                     </div>
-                  </div>
-
-                  <div>
-                    <p className="mb-2 text-xs font-medium uppercase tracking-[0.15em] text-muted">
-                      Detailed estimate
-                    </p>
-                    <dl className="divide-y divide-line text-sm">
+                    <dl className="text-[12.5px]">
                       {(
                         [
-                          ["Packaging allowance", costing.detailedEstimate.packagingAllowance],
-                          ["Freight allowance", costing.detailedEstimate.freightAllowance],
-                          ["Duty allowance", costing.detailedEstimate.dutyAllowance],
-                          ["Sample allocation", costing.detailedEstimate.sampleAllocation],
-                          ["Return allowance", costing.detailedEstimate.returnAllowance],
+                          [
+                            "Packaging allowance",
+                            costing.detailedEstimate.packagingAllowance,
+                          ],
+                          [
+                            "Freight allowance",
+                            costing.detailedEstimate.freightAllowance,
+                          ],
+                          [
+                            "Duty allowance",
+                            costing.detailedEstimate.dutyAllowance,
+                          ],
+                          [
+                            "Sample allocation",
+                            costing.detailedEstimate.sampleAllocation,
+                          ],
+                          [
+                            "Return allowance",
+                            costing.detailedEstimate.returnAllowance,
+                          ],
                         ] as const
                       ).map(([label, value]) => (
                         <div
                           key={label}
-                          className="flex items-center justify-between gap-4 py-2"
+                          className="flex items-center justify-between border-b border-[rgba(0,0,0,0.05)] py-[7px]"
                         >
-                          <dt className="text-muted">{label}</dt>
-                          <dd className="tabular-nums text-ink">
+                          <dt className="text-ink2">{label}</dt>
+                          <dd className="font-mono tabular-nums text-ink">
                             {formatCurrency(value, costing.currency)}
                           </dd>
                         </div>
                       ))}
-                      <div className="flex items-center justify-between gap-4 py-2">
-                        <dt className="font-medium text-ink">
-                          Maximum factory cost
-                        </dt>
-                        <dd className="font-medium tabular-nums text-ink">
-                          {formatCurrency(
-                            costing.detailedEstimate.maximumFactoryCost,
-                            costing.currency,
-                          )}
-                        </dd>
-                      </div>
                     </dl>
-                    <p className="mt-3 text-xs leading-relaxed text-muted">
-                      Computed by code as target retail × (1 − target margin),
-                      less packaging, freight, duty, sample, and return
-                      allowances. Calculated {formatDate(costing.calculatedAt)}.
+                    <p className="mt-3 text-[11px] text-muted">
+                      Calculated {formatDate(costing.calculatedAt)}.
                     </p>
                   </div>
                 </div>
               ) : (
-                <p className="text-sm text-muted">
+                <p className="text-[13px] text-muted">
                   No costing model yet. It is generated with the design brief.
                 </p>
               )}
-            </CardContent>
+            </div>
           </Card>
         </div>
       </div>

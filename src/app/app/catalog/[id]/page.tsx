@@ -1,5 +1,4 @@
 import Link from "next/link";
-import { ArrowLeft, Package } from "lucide-react";
 import {
   getAppSettings,
   getProduct,
@@ -7,23 +6,48 @@ import {
   type ActivityLogRow,
   type ProductRow,
 } from "@/lib/supabase/repositories";
-import { formatCurrency } from "@/lib/utils";
-import { AgentTrace } from "@/components/agent-trace";
-import { StatusBadge } from "@/components/status-badge";
-import { Badge } from "@/components/ui/badge";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { ANALYSIS_TONE, money, toneFor } from "@/lib/ui/tokens";
+import { formatDate } from "@/lib/utils";
+import {
+  AgentTrace,
+  Card,
+  CardRow,
+  Icon,
+  PageHeader,
+  Pill,
+  SetupCard,
+  Swatch,
+  type AgentTraceEntry,
+} from "@/components/lo";
 import { isSetupError } from "@/app/app/_lib/server";
-import { toAgentTraceEntry } from "@/app/app/_lib/mappers";
-import { PageHeader } from "@/app/app/_components/page-header";
-import { SetupCard } from "@/app/app/_components/setup-card";
-import { AnalysisPanel } from "@/app/app/_components/analysis-panel";
-import { AnalyseButton } from "@/app/app/_components/analyse-button";
+import {
+  AnalysisPanelBody,
+  ReanalyseButton,
+} from "../_components/product-drawer";
 
 /**
- * Full product detail page (spec 23): image, metadata, the analysis panel,
- * this product's activity history, and a re-analyse action.
+ * Full product detail (spec 23): a larger fabric swatch, catalog metadata, the
+ * same Garment Librarian analysis panel used in the drawer, this product's
+ * activity history, and a re-analyse action. Degrades to a setup card when
+ * Supabase is unconfigured and to a not-found card when the id is unknown.
  */
 export const dynamic = "force-dynamic";
+
+type AnalysisView =
+  | "queued"
+  | "running"
+  | "failed"
+  | "needs_review"
+  | "complete";
+
+function analysisView(
+  product: Pick<ProductRow, "analysis_status" | "status">,
+): AnalysisView {
+  if (product.analysis_status === "running") return "running";
+  if (product.analysis_status === "failed") return "failed";
+  if (product.analysis_status === "pending") return "queued";
+  return product.status === "reviewed" ? "complete" : "needs_review";
+}
 
 interface DetailData {
   configured: boolean;
@@ -53,6 +77,37 @@ async function loadDetail(id: string): Promise<DetailData> {
   }
 }
 
+function toTraceEntry(row: ActivityLogRow): AgentTraceEntry {
+  const inTok = Number(row.usage?.inputTokens ?? 0);
+  const outTok = Number(row.usage?.outputTokens ?? 0);
+  const total = inTok + outTok;
+  const meta = [row.provider, row.model].filter(Boolean).join(" · ");
+  const tokens =
+    total > 0
+      ? `${meta ? `${meta} · ` : ""}${total.toLocaleString("en-SG")} tokens`
+      : meta || undefined;
+  const failed = /fail|error/i.test(row.output_summary) || /fail|error/i.test(row.action);
+  return {
+    id: row.id,
+    actor: row.actor,
+    action: row.action,
+    detail: row.output_summary || row.input_summary || undefined,
+    tokens,
+    error: failed,
+    time: formatDate(row.created_at),
+  };
+}
+
+const BackLink = (
+  <Link
+    href="/app/catalog"
+    className="mb-4 inline-flex items-center gap-1.5 text-[13px] text-muted transition-colors hover:text-ink"
+  >
+    <Icon name="chevron-left" size={16} />
+    Back to catalog
+  </Link>
+);
+
 export default async function ProductDetailPage({
   params,
 }: {
@@ -61,141 +116,148 @@ export default async function ProductDetailPage({
   const { id } = await params;
   const data = await loadDetail(id);
 
-  const backLink = (
-    <Link
-      href="/app/catalog"
-      className="inline-flex items-center gap-1.5 text-sm text-muted transition-colors hover:text-ink"
-    >
-      <ArrowLeft aria-hidden className="size-4" />
-      Back to catalog
-    </Link>
-  );
-
   if (!data.configured) {
     return (
-      <div className="flex flex-col gap-6">
-        {backLink}
-        <SetupCard />
+      <div>
+        <PageHeader title="Product" />
+        <div className="px-[30px] pt-4 pb-11">
+          {BackLink}
+          <SetupCard service="Supabase" />
+        </div>
       </div>
     );
   }
 
   if (!data.product) {
     return (
-      <div className="flex flex-col gap-6">
-        {backLink}
-        <Card className="px-6 py-12 text-center">
-          <h1 className="font-display text-xl text-ink">Product not found</h1>
-          <p className="mt-2 text-sm text-muted">
-            This product may have been removed. Return to the catalog to browse
-            the rest.
-          </p>
-        </Card>
+      <div>
+        <PageHeader title="Product not found" />
+        <div className="px-[30px] pt-4 pb-11">
+          {BackLink}
+          <Card padding={28} className="text-center">
+            <div className="text-[15px] font-[650] text-ink">
+              This product could not be found
+            </div>
+            <div className="mt-1.5 text-[13px] text-muted">
+              It may have been removed. Return to the catalog to browse the rest.
+            </div>
+          </Card>
+        </div>
       </div>
     );
   }
 
   const product = data.product;
-  const analysed = product.analysis_status === "complete" && product.analysis;
+  const view = analysisView(product);
+  const tone = toneFor(ANALYSIS_TONE, view);
+  const hasAnalysis =
+    (view === "complete" || view === "needs_review") && !!product.analysis;
+  const subtitleParts = [
+    product.sku ? `SKU ${product.sku}` : null,
+    product.product_type || null,
+  ].filter(Boolean);
 
   return (
-    <div className="flex flex-col gap-8">
-      {backLink}
+    <div>
       <PageHeader
-        eyebrow="Product"
         title={product.title}
-        description={product.sku ? `SKU ${product.sku}` : undefined}
+        subtitle={subtitleParts.join(" · ") || undefined}
         actions={
-          <AnalyseButton
-            productId={product.id}
-            label={analysed ? "Re-analyse" : "Analyse"}
-          />
+          <ReanalyseButton productId={product.id} analysed={hasAnalysis} />
         }
       />
 
-      <div className="grid gap-6 lg:grid-cols-3">
-        <Card className="lg:col-span-1">
-          <CardContent className="flex flex-col gap-4">
-            {product.public_image_url ? (
-              // eslint-disable-next-line @next/next/no-img-element
-              <img
-                src={product.public_image_url}
-                alt={product.title}
-                className="aspect-square w-full border border-line object-cover"
-              />
-            ) : (
-              <div className="flex aspect-square w-full items-center justify-center border border-line bg-paper text-line">
-                <Package aria-hidden className="size-10" />
-              </div>
-            )}
-            <dl className="flex flex-col gap-3">
-              <div className="flex items-center justify-between">
-                <dt className="text-sm text-muted">Price</dt>
-                <dd className="font-medium text-ink">
-                  {formatCurrency(product.price, data.currency)}
-                </dd>
-              </div>
-              <div className="flex items-center justify-between">
-                <dt className="text-sm text-muted">Stock</dt>
-                <dd className="text-sm text-ink">
-                  {product.inventory_quantity > 0
-                    ? `${product.inventory_quantity} in stock`
-                    : "Out of stock"}
-                </dd>
-              </div>
-              <div className="flex items-center justify-between">
-                <dt className="text-sm text-muted">Source</dt>
-                <dd className="text-sm capitalize text-ink">{product.source}</dd>
-              </div>
-              <div className="flex items-center justify-between">
-                <dt className="text-sm text-muted">Analysis</dt>
-                <dd>
-                  <StatusBadge kind="analysis" status={product.analysis_status} />
-                </dd>
-              </div>
-              {product.product_type ? (
-                <div className="flex items-center justify-between">
-                  <dt className="text-sm text-muted">Type</dt>
-                  <dd>
-                    <Badge variant="neutral">{product.product_type}</Badge>
-                  </dd>
-                </div>
-              ) : null}
-            </dl>
-            {product.description ? (
-              <p className="border-t border-line pt-4 text-sm leading-relaxed text-muted">
-                {product.description}
-              </p>
-            ) : null}
-          </CardContent>
-        </Card>
+      <div className="px-[30px] pt-4 pb-11">
+        {BackLink}
 
-        <Card className="lg:col-span-2">
-          <CardHeader>
-            <CardTitle>Garment analysis</CardTitle>
-          </CardHeader>
-          <CardContent>
-            {analysed && product.analysis ? (
-              <AnalysisPanel analysis={product.analysis} />
+        <div className="grid gap-5 lg:grid-cols-[minmax(0,1fr)_minmax(0,1.5fr)]">
+          {/* Swatch + metadata */}
+          <div className="flex flex-col gap-4">
+            <Swatch
+              seed={product.id}
+              file={
+                product.image_path
+                  ? product.image_path.split("/").pop()
+                  : undefined
+              }
+              imageUrl={product.public_image_url ?? undefined}
+              running={view === "running"}
+              aspect="3/4"
+              rounded={16}
+            />
+            <Card padding="4px 0">
+              <div className="px-4 pb-1 pt-3 text-[15px] font-[650] text-ink">
+                Details
+              </div>
+              <CardRow
+                label="Price"
+                value={money(product.price, data.currency)}
+              />
+              <CardRow
+                label="Stock"
+                value={
+                  product.inventory_quantity > 0
+                    ? `${product.inventory_quantity} in stock`
+                    : "Out of stock"
+                }
+              />
+              <CardRow
+                label="Source"
+                value={
+                  <span className="capitalize">{product.source}</span>
+                }
+              />
+              {product.product_type ? (
+                <CardRow label="Type" value={product.product_type} />
+              ) : null}
+              <CardRow
+                label="Analysis"
+                value={<Pill tone={tone} />}
+              />
+            </Card>
+            {product.description ? (
+              <Card padding={16}>
+                <div className="text-[13px] leading-relaxed text-ink2">
+                  {product.description}
+                </div>
+              </Card>
+            ) : null}
+          </div>
+
+          {/* Analysis panel */}
+          <Card padding={18}>
+            <div className="mb-4 text-[15px] font-[650] text-ink">
+              Garment analysis
+            </div>
+            {hasAnalysis && product.analysis ? (
+              <AnalysisPanelBody analysis={product.analysis} />
             ) : (
-              <p className="text-sm leading-relaxed text-muted">
-                {product.analysis_status === "failed"
-                  ? "The last analysis failed. Run it again to enrich this product."
-                  : "This product hasn't been analysed yet. Run the Garment Librarian to add category, colours, and styling metadata."}
-              </p>
+              <div className="rounded-[12px] border border-[rgba(0,0,0,0.06)] bg-[rgba(120,120,128,0.05)] px-4 py-8 text-center">
+                <div className="text-[13.5px] font-semibold text-ink2">
+                  {view === "running"
+                    ? "Analysis in progress"
+                    : view === "failed"
+                      ? "The last analysis failed"
+                      : "Not analysed yet"}
+                </div>
+                <div className="mx-auto mt-1 max-w-sm text-[12.5px] leading-relaxed text-muted">
+                  {view === "running"
+                    ? "The Garment Librarian is reading this garment. Refresh in a moment."
+                    : view === "failed"
+                      ? "Re-upload the image or run the analysis again to enrich this product."
+                      : "Run the Garment Librarian to add category, colour, and styling metadata the agents rely on."}
+                </div>
+              </div>
             )}
-          </CardContent>
+          </Card>
+        </div>
+
+        {/* Activity */}
+        <Card padding={18} className="mt-5">
+          <div className="mb-1 text-[15px] font-[650] text-ink">Activity</div>
+          <AgentTrace entries={data.activity.map(toTraceEntry)} />
         </Card>
       </div>
-
-      <Card>
-        <CardHeader>
-          <CardTitle>Activity</CardTitle>
-        </CardHeader>
-        <CardContent>
-          <AgentTrace entries={data.activity.map(toAgentTraceEntry)} />
-        </CardContent>
-      </Card>
     </div>
   );
 }

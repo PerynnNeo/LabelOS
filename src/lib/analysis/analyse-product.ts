@@ -142,8 +142,24 @@ export async function analyseProduct(
       entityId: productId,
     });
 
+    // Truthfulness guard (spec §1.6, §11.2): a material read from the image is a
+    // visual inference, never verified fibre composition. The MVP does not yet
+    // capture merchant/supplier fibre documentation, so force the observation to
+    // unverified regardless of what the model returned — the UI must never
+    // present a visual guess as fact.
+    const analysis: GarmentAnalysis = {
+      ...data,
+      materialObservation: {
+        ...data.materialObservation,
+        verified: false,
+        caveat:
+          data.materialObservation.caveat?.trim() ||
+          "Visual inference from the product image — confirm fibre against supplier or merchant documentation before publishing.",
+      },
+    };
+
     const updated = await updateProduct(productId, {
-      analysis: data,
+      analysis,
       analysis_status: "complete",
     });
 
@@ -156,7 +172,7 @@ export async function analyseProduct(
       model,
       usage,
       inputSummary: `Analyse garment "${product.title}"`,
-      outputSummary: `complete — category ${data.category}, confidence ${data.confidence.toFixed(2)}`,
+      outputSummary: `complete — category ${analysis.category}, confidence ${analysis.confidence.toFixed(2)}`,
       rawMetadata: {
         status: "success",
         promptVersion: request.promptVersion,
@@ -164,7 +180,7 @@ export async function analyseProduct(
       },
     });
 
-    return { product: updated, analysis: data, usage, provider: providerName, model };
+    return { product: updated, analysis, usage, provider: providerName, model };
   } catch (error) {
     try {
       await updateProduct(productId, { analysis_status: "failed" });

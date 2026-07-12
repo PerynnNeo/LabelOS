@@ -71,14 +71,21 @@ function printTable(rows: Row[]): void {
 }
 
 function main(): void {
-  const envLocalPath = resolve(process.cwd(), ".env.local");
-  const loaded = loadDotEnvFile(envLocalPath);
+  // Load .env.local first (it wins — existing process.env keys are preserved),
+  // then let .env fill any gaps. Next.js loads both automatically, so this keeps
+  // the CLI scripts in step with the running app.
+  const loadedLocal = loadDotEnvFile(resolve(process.cwd(), ".env.local"));
+  const loadedEnv = loadDotEnvFile(resolve(process.cwd(), ".env"));
+  const sources = [
+    loadedLocal ? ".env.local" : null,
+    loadedEnv ? ".env" : null,
+  ].filter(Boolean);
 
   console.log("LabelOS environment check");
   console.log(
-    loaded
-      ? `  Loaded .env.local from ${envLocalPath}`
-      : "  No .env.local found — using process environment only.",
+    sources.length > 0
+      ? `  Loaded ${sources.join(" + ")}`
+      : "  No .env.local or .env found — using process environment only.",
   );
   console.log("");
 

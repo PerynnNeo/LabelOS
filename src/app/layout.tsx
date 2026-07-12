@@ -2,8 +2,9 @@ import type { Metadata } from "next";
 import { Toaster } from "sonner";
 import "./globals.css";
 
-// No next/font/google here on purpose: builds must work offline, so the
-// theme relies on web-safe font stacks defined in globals.css (@theme).
+// Instrument Serif (display face in the design) is loaded via a stylesheet
+// link with a Georgia fallback, so a production build never needs network
+// access to a font CDN — if the link fails, the serif fallback is used.
 
 export const metadata: Metadata = {
   title: "LabelOS",
@@ -17,10 +18,22 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <html lang="en" className="h-full antialiased">
-      <body className="flex min-h-dvh flex-col bg-paper font-sans text-ink">
+    <html lang="en" className="h-full">
+      <head>
+        <link rel="preconnect" href="https://fonts.googleapis.com" />
+        <link
+          rel="preconnect"
+          href="https://fonts.gstatic.com"
+          crossOrigin="anonymous"
+        />
+        <link
+          href="https://fonts.googleapis.com/css2?family=Instrument+Serif:ital@0;1&display=swap"
+          rel="stylesheet"
+        />
+      </head>
+      <body className="min-h-dvh bg-canvas font-sans text-ink">
         {children}
-        <Toaster position="top-center" />
+        <Toaster position="bottom-center" />
       </body>
     </html>
   );

@@ -1,6 +1,11 @@
 import "server-only";
 import { getEnv, isShopifyLive } from "@/lib/env";
-import { collectUserErrors, ShopifyError, shopifyGraphql } from "./client";
+import {
+  collectUserErrors,
+  ShopifyError,
+  shopifyGraphql,
+  type ShopifyGraphqlResult,
+} from "./client";
 import { getMockShopifyProvider } from "./mock-provider";
 import {
   COLLECTION_ADD_PRODUCTS,
@@ -25,6 +30,7 @@ import {
   publicationsDataSchema,
   publishablePublishDataSchema,
   shopQueryDataSchema,
+  type ProductsPageData,
   type ShopifyProductNode,
 } from "./schemas";
 
@@ -164,20 +170,24 @@ class ClientCredentialsShopifyProvider implements ShopifyProvider {
 
     while (products.length < limit) {
       const first = Math.min(IMPORT_PAGE_SIZE, limit - products.length);
-      const { data } = await shopifyGraphql({
+      // Decouple the cursor read from the cursor reassignment below so the
+      // request no longer sits inside its own control-flow inference cycle.
+      const currentCursor: string | null = cursor;
+      const page: ShopifyGraphqlResult<ProductsPageData> = await shopifyGraphql({
         query: PRODUCTS_QUERY,
-        variables: { first, cursor },
+        variables: { first, cursor: currentCursor },
         schema: productsPageDataSchema,
       });
+      const pageData: ProductsPageData = page.data;
 
-      for (const node of data.products.nodes) {
+      for (const node of pageData.products.nodes) {
         if (products.length >= limit) break;
         products.push(mapProductNode(node));
       }
 
-      const { hasNextPage, endCursor } = data.products.pageInfo;
-      if (!hasNextPage || !endCursor) break;
-      cursor = endCursor;
+      const pageInfo = pageData.products.pageInfo;
+      if (!pageInfo.hasNextPage || !pageInfo.endCursor) break;
+      cursor = pageInfo.endCursor;
     }
 
     return products;

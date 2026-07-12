@@ -1,65 +1,193 @@
 @import "tailwindcss";
 
 /*
- * LabelOS design tokens — editorial fashion direction, light theme only.
- * Tailwind v4: tokens declared in @theme generate the matching utilities
- * (bg-paper, text-ink, border-line, font-display, text-danger, ...).
+ * LabelOS design system — iOS / macOS "Human Interface" direction.
+ * Ported from the product design mockup in design-reference/LabelOS.dc.html.
+ *
+ * Tailwind v4: tokens declared in @theme generate the matching utilities, e.g.
+ *   --color-accent   -> bg-accent / text-accent / border-accent
+ *   --color-ink      -> text-ink
+ *   --font-display   -> font-display
+ *
+ * Light theme only (matches the mockup). Status tint pairs that need a
+ * low-alpha background with a solid foreground live in src/lib/ui/tokens.ts.
  */
 @theme {
-  --color-paper: #faf9f6;
-  --color-surface: #ffffff;
-  --color-ink: #161514;
-  --color-muted: #6f6a63;
-  --color-line: #e5e1da;
-  --color-accent: #8b6a4f;
-  --color-success: #3d6b4f;
-  --color-warning: #9a7b2d;
-  --color-danger: #8c3b2e;
+  /* Surfaces */
+  --color-canvas: #f5f5f7; /* app main background */
+  --color-sidebar: #f3f3f5; /* left navigation rail */
+  --color-surface: #ffffff; /* cards, drawers, modals */
+  --color-window: #dedee4; /* outermost shell (login, framing) */
 
-  --font-display: Georgia, "Times New Roman", serif;
+  /* Text — iOS label greys */
+  --color-ink: #1d1d1f; /* primary label */
+  --color-ink2: #48484a; /* secondary label */
+  --color-ink3: #6e6e73; /* tertiary label */
+  --color-muted: #8e8e93; /* quaternary / captions */
+  --color-faint: #aeaeb2; /* disabled / meta */
+
+  /* Hairlines */
+  --color-line: #e5e5e7;
+  --color-line2: #d8d8dc;
+
+  /* Accent (iOS blue, configurable) */
+  --color-accent: #0a84ff;
+  --color-accent-ink: #0863c4; /* accent text on tint */
+
+  /* Semantic */
+  --color-success: #34c759;
+  --color-success-ink: #248a3d;
+  --color-warning: #ff9500;
+  --color-warning-ink: #b25000;
+  --color-danger: #ff3b30;
+  --color-danger-ink: #c4271b;
+  --color-purple: #5e5ce6;
+  --color-teal: #30b0c7;
+  --color-cyan: #34aadc;
+  --color-pink: #ff375f;
+  --color-violet: #af52de;
+
+  /* Typography */
   --font-sans:
-    ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto,
-    "Helvetica Neue", Arial, sans-serif;
+    -apple-system, BlinkMacSystemFont, "SF Pro Text", "SF Pro Display",
+    "Helvetica Neue", "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  --font-display: "Instrument Serif", Georgia, "Times New Roman", serif;
+  --font-mono: "SF Mono", ui-monospace, Menlo, Monaco, "Cascadia Mono", monospace;
+
+  /* Radii */
+  --radius-card: 16px;
+  --radius-control: 9px;
+  --radius-pill: 20px;
+
+  /* Elevation */
+  --shadow-card: 0 1px 2px rgba(0, 0, 0, 0.05);
+  --shadow-raise: 0 14px 30px -14px rgba(0, 0, 0, 0.24);
+  --shadow-modal: 0 30px 70px -18px rgba(0, 0, 0, 0.5);
+  --shadow-drawer: -24px 0 60px -20px rgba(0, 0, 0, 0.4);
 }
 
 @layer base {
+  html,
   body {
-    background-color: var(--color-paper);
+    height: 100%;
+  }
+  body {
+    background-color: var(--color-canvas);
     color: var(--color-ink);
     font-family: var(--font-sans);
-  }
-
-  h1,
-  h2,
-  h3,
-  h4 {
-    font-family: var(--font-display);
-    letter-spacing: -0.01em;
+    -webkit-font-smoothing: antialiased;
+    text-rendering: optimizeLegibility;
   }
 
   ::selection {
-    background-color: var(--color-accent);
-    color: var(--color-paper);
+    background: rgba(10, 132, 255, 0.18);
   }
 
   :focus-visible {
     outline: 2px solid var(--color-accent);
     outline-offset: 2px;
+    border-radius: 8px;
+  }
+
+  /* Thin iOS-style scrollbars */
+  * {
+    scrollbar-width: thin;
+    scrollbar-color: rgba(0, 0, 0, 0.2) transparent;
+  }
+  *::-webkit-scrollbar {
+    width: 10px;
+    height: 10px;
+  }
+  *::-webkit-scrollbar-thumb {
+    background: rgba(0, 0, 0, 0.18);
+    border-radius: 8px;
+    border: 3px solid transparent;
+    background-clip: content-box;
   }
 }
 
 @layer components {
-  /* Shared editorial building blocks. */
-  .card {
-    background-color: var(--color-surface);
-    border: 1px solid var(--color-line);
+  /* Frosted sticky header used on every screen. */
+  .lo-header {
+    position: sticky;
+    top: 0;
+    z-index: 5;
+    background: rgba(245, 245, 247, 0.8);
+    backdrop-filter: saturate(180%) blur(20px);
+    border-bottom: 1px solid rgba(0, 0, 0, 0.06);
   }
 
-  .eyebrow {
-    font-size: 0.75rem;
-    font-weight: 500;
-    letter-spacing: 0.2em;
-    text-transform: uppercase;
-    color: var(--color-accent);
+  /* Standard white card. */
+  .lo-card {
+    background: var(--color-surface);
+    border: 1px solid rgba(0, 0, 0, 0.06);
+    border-radius: var(--radius-card);
+    box-shadow: var(--shadow-card);
+  }
+
+  /* "Next action" hero band (accent-tinted). */
+  .lo-hero {
+    background: linear-gradient(
+      120deg,
+      rgba(10, 132, 255, 0.09),
+      rgba(10, 132, 255, 0.03)
+    );
+    border: 1px solid rgba(10, 132, 255, 0.22);
+    border-radius: var(--radius-card);
+  }
+
+  /* Diagonal-hatch gradient swatch used as a product/image placeholder. */
+  .lo-hatch::before {
+    content: "";
+    position: absolute;
+    inset: 0;
+    background-image: repeating-linear-gradient(
+      135deg,
+      rgba(255, 255, 255, 0.16) 0 12px,
+      transparent 12px 24px
+    );
+  }
+}
+
+@keyframes lo-pulse {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.35;
+  }
+}
+@keyframes lo-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+@keyframes lo-toast {
+  from {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+@keyframes lo-fade {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+@keyframes lo-slide {
+  from {
+    transform: translateX(28px);
+    opacity: 0.4;
+  }
+  to {
+    transform: none;
+    opacity: 1;
   }
 }

@@ -1,24 +1,86 @@
-import { AppShell } from "@/components/app-shell";
-import { getAppSettings } from "@/lib/supabase/repositories";
-import { isSetupError } from "@/app/app/_lib/server";
-import { LogoutButton } from "@/app/app/_components/logout-button";
+import { integrationStatus } from "@/lib/env";
+import {
+  countProducts,
+  getAppSettings,
+  listApprovals,
+  listCollections,
+  type CollectionRow,
+} from "@/lib/supabase/repositories";
+import { AppShell } from "@/app/app/_shell";
 
 /**
  * Authenticated app frame. The proxy already gates /app/* on a valid session;
- * this layout adds the persistent sidebar (via AppShell), the brand wordmark
- * (from app_settings when available), and a logout control. Reading the brand
- * name must never crash the shell, so a setup/DB error falls back to "LabelOS".
+ * this server layout resolves the brand identity, the active collection (to scope
+ * studio nav), and the sidebar badge counts, then renders the persistent shell.
+ *
+ * Reading the database must never crash the shell: a Supabase/setup error (or any
+ * unexpected read failure) degrades to safe defaults so every child page still
+ * renders its own setup card.
  */
 export const dynamic = "force-dynamic";
 
-async function resolveBrandName(): Promise<string> {
+const ACTIVE_STATUSES = new Set([
+  "draft",
+  "briefed",
+  "active",
+  "curated",
+  "ready",
+]);
+
+interface ShellData {
+  brandName: string;
+  subtitle: string;
+  activeCollectionId: string | null;
+  pendingCount: number;
+  needsAttentionCount: number;
+}
+
+function pickActiveCollection(
+  collections: CollectionRow[],
+): CollectionRow | null {
+  return (
+    collections.find((c) => ACTIVE_STATUSES.has(c.status)) ??
+    collections[0] ??
+    null
+  );
+}
+
+async function loadShell(): Promise<ShellData> {
+  const fallback: ShellData = {
+    brandName: "LabelOS",
+    subtitle: "Studio",
+    activeCollectionId: null,
+    pendingCount: 0,
+    needsAttentionCount: 0,
+  };
+
   try {
-    const settings = await getAppSettings();
-    return settings?.brand_name?.trim() || "LabelOS";
-  } catch (error) {
-    if (isSetupError(error)) return "LabelOS";
-    // Any other read failure still shouldn't take down the whole app shell.
-    return "LabelOS";
+    const [settings, collections, approvals, failed, queued] =
+      await Promise.all([
+        getAppSettings(),
+        listCollections(),
+        listApprovals({ status: "pending" }),
+        countProducts({ analysisStatus: "failed" }),
+        countProducts({ analysisStatus: "pending" }),
+      ]);
+
+    const brandName = settings?.brand_name?.trim() || "LabelOS";
+    const currency = settings?.currency?.trim() || "SGD";
+    const market = settings?.market?.trim();
+    const subtitle = market ? `${market} · ${currency}` : `Contemporary · ${currency}`;
+    const active = pickActiveCollection(collections);
+
+    return {
+      brandName,
+      subtitle,
+      activeCollectionId: active?.id ?? null,
+      pendingCount: approvals.length,
+      needsAttentionCount: failed + queued,
+    };
+  } catch {
+    // A missing / unmigrated Supabase (or any read failure) must never take
+    // down the whole shell — every child page renders its own setup card.
+    return fallback;
   }
 }
 
@@ -27,17 +89,17 @@ export default async function AppLayout({
 }: {
   children: React.ReactNode;
 }) {
-  const brandName = await resolveBrandName();
+  const status = integrationStatus();
+  const data = await loadShell();
 
   return (
     <AppShell
-      brandName={brandName}
-      topBar={
-        <div className="flex w-full items-center justify-between gap-4">
-          <span className="eyebrow">The studio</span>
-          <LogoutButton />
-        </div>
-      }
+      brandName={data.brandName}
+      subtitle={data.subtitle}
+      activeCollectionId={data.activeCollectionId}
+      demoMode={status.demoMode}
+      pendingCount={data.pendingCount}
+      needsAttentionCount={data.needsAttentionCount}
     >
       {children}
     </AppShell>

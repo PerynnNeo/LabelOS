@@ -21,6 +21,10 @@ const envSchema = z.object({
   APP_URL: z.string().default("http://localhost:3000"),
   APP_ACCESS_CODE: z.string().default(""),
   SESSION_SECRET: z.string().default(""),
+  // "access_code" gates /app and mutation APIs behind the login code (default).
+  // "open" disables the gate — the workspace is reachable with no login. Use
+  // "open" only for local/demo; a public deployment should stay on access_code.
+  AUTH_MODE: z.enum(["access_code", "open"]).default("access_code"),
   DEMO_MODE: boolString,
   LOG_LEVEL: z.enum(["debug", "info", "warn", "error"]).default("info"),
 
@@ -38,6 +42,14 @@ const envSchema = z.object({
   ANTHROPIC_API_KEY: z.string().optional(),
   ANTHROPIC_MODEL: z.string().default("claude-sonnet-5"),
   ENABLE_CLAUDE_WEB_SEARCH: boolString,
+
+  // Image generation — server only (garment concept images)
+  IMAGE_PROVIDER: z.enum(["mock", "replicate"]).default("mock"),
+  REPLICATE_API_TOKEN: z.string().optional(),
+  REPLICATE_MODEL: z.string().default("black-forest-labs/flux-1.1-pro"),
+  IMAGE_GENERATION_CONCURRENCY: z.coerce.number().int().positive().default(2),
+  IMAGE_GENERATION_MAX_CONCEPTS: z.coerce.number().int().positive().default(12),
+  SUPABASE_STORAGE_BUCKET_CONCEPTS: z.string().default("design-concepts"),
 
   // Supabase
   NEXT_PUBLIC_SUPABASE_URL: z.string().optional(),
@@ -105,8 +117,27 @@ export function isShopifyLive(env: Env = getEnv()): boolean {
   );
 }
 
+/**
+ * True when live garment-image generation is configured (Replicate selected and
+ * a token present). Otherwise the deterministic SVG mock provider is used, so
+ * the new-collection design flow always produces recognisable concept sheets
+ * without any external image API.
+ */
+export function isImageProviderLive(env: Env = getEnv()): boolean {
+  return env.IMAGE_PROVIDER === "replicate" && Boolean(env.REPLICATE_API_TOKEN);
+}
+
 export function isAuthConfigured(env: Env = getEnv()): boolean {
   return env.APP_ACCESS_CODE.length >= 8 && env.SESSION_SECRET.length >= 32;
+}
+
+/**
+ * True when the access-code gate is disabled (AUTH_MODE=open). The proxy and
+ * requireSession then let requests through without a session — intended for
+ * local/demo use only.
+ */
+export function isAuthOpen(env: Env = getEnv()): boolean {
+  return env.AUTH_MODE === "open";
 }
 
 export interface IntegrationStatus {
@@ -118,6 +149,9 @@ export interface IntegrationStatus {
   shopifyConfigured: boolean;
   webSearchEnabled: boolean;
   authConfigured: boolean;
+  imageProvider: "mock" | "replicate";
+  imageProviderLive: boolean;
+  imageModel: string;
 }
 
 export function integrationStatus(env: Env = getEnv()): IntegrationStatus {
@@ -130,5 +164,8 @@ export function integrationStatus(env: Env = getEnv()): IntegrationStatus {
     shopifyConfigured: isShopifyLive(env),
     webSearchEnabled: env.ENABLE_CLAUDE_WEB_SEARCH,
     authConfigured: isAuthConfigured(env),
+    imageProvider: env.IMAGE_PROVIDER,
+    imageProviderLive: isImageProviderLive(env),
+    imageModel: env.REPLICATE_MODEL,
   };
 }

@@ -1,6 +1,7 @@
 import "server-only";
 import type { NextRequest } from "next/server";
 import { cookies } from "next/headers";
+import { isAuthOpen } from "@/lib/env";
 import { SESSION_COOKIE, verifySessionToken } from "./session";
 
 /**
@@ -24,6 +25,7 @@ export type SessionCheck = { ok: true } | { ok: false };
 export async function requireSession(
   request: NextRequest,
 ): Promise<SessionCheck> {
+  if (isAuthOpen()) return { ok: true };
   const token = request.cookies.get(SESSION_COOKIE)?.value;
   if (!token) return { ok: false };
   return (await verifySessionToken(token)) ? { ok: true } : { ok: false };
@@ -34,6 +36,7 @@ export async function requireSession(
  * NextRequest is available.
  */
 export async function getSessionFromCookies(): Promise<SessionCheck> {
+  if (isAuthOpen()) return { ok: true };
   const store = await cookies();
   const token = store.get(SESSION_COOKIE)?.value;
   if (!token) return { ok: false };

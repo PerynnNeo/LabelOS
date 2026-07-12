@@ -1,12 +1,23 @@
 import "server-only";
 import { createClient, type SupabaseClient } from "@supabase/supabase-js";
+import WebSocketImpl from "ws";
 import { getEnv, isSupabaseConfigured } from "@/lib/env";
 
 /**
  * Service-role Supabase client. Server only — never import from a Client
  * Component. All database access goes through this client; RLS is enabled on
  * every table with no anonymous policies.
+ *
+ * Node < 22 has no global WebSocket, which @supabase/supabase-js requires even
+ * though LabelOS never uses realtime. Polyfill it once here (the single module
+ * every Supabase access flows through) so both the app server and the CLI
+ * scripts work on Node 20. This module is server-only, so `ws` never reaches a
+ * browser or edge bundle.
  */
+const globalWithWs = globalThis as { WebSocket?: unknown };
+if (typeof globalWithWs.WebSocket === "undefined") {
+  globalWithWs.WebSocket = WebSocketImpl;
+}
 
 export class SupabaseNotConfiguredError extends Error {
   constructor() {
