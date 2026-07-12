@@ -1,0 +1,65 @@
+@import "tailwindcss";
+
+/*
+ * LabelOS design tokens — editorial fashion direction, light theme only.
+ * Tailwind v4: tokens declared in @theme generate the matching utilities
+ * (bg-paper, text-ink, border-line, font-display, text-danger, ...).
+ */
+@theme {
+  --color-paper: #faf9f6;
+  --color-surface: #ffffff;
+  --color-ink: #161514;
+  --color-muted: #6f6a63;
+  --color-line: #e5e1da;
+  --color-accent: #8b6a4f;
+  --color-success: #3d6b4f;
+  --color-warning: #9a7b2d;
+  --color-danger: #8c3b2e;
+
+  --font-display: Georgia, "Times New Roman", serif;
+  --font-sans:
+    ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto,
+    "Helvetica Neue", Arial, sans-serif;
+}
+
+@layer base {
+  body {
+    background-color: var(--color-paper);
+    color: var(--color-ink);
+    font-family: var(--font-sans);
+  }
+
+  h1,
+  h2,
+  h3,
+  h4 {
+    font-family: var(--font-display);
+    letter-spacing: -0.01em;
+  }
+
+  ::selection {
+    background-color: var(--color-accent);
+    color: var(--color-paper);
+  }
+
+  :focus-visible {
+    outline: 2px solid var(--color-accent);
+    outline-offset: 2px;
+  }
+}
+
+@layer components {
+  /* Shared editorial building blocks. */
+  .card {
+    background-color: var(--color-surface);
+    border: 1px solid var(--color-line);
+  }
+
+  .eyebrow {
+    font-size: 0.75rem;
+    font-weight: 500;
+    letter-spacing: 0.2em;
+    text-transform: uppercase;
+    color: var(--color-accent);
+  }
+}

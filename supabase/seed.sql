@@ -1,0 +1,13 @@
+-- LabelOS seed data lives in code, not SQL.
+--
+-- After running migrations/001_initial.sql, seed the demo dataset with:
+--
+--   npm run seed        (runs scripts/seed-demo.ts)
+--
+-- The TypeScript seeder is idempotent: it renders original flat-garment SVGs
+-- to PNG with sharp, uploads them to the private `catalog-private` storage
+-- bucket, and inserts the demo brand, 15 products, 3 demo suppliers, and one
+-- sample collection brief — skipping anything that already exists.
+--
+-- Seeding cannot be done from SQL alone because the product images are
+-- generated and uploaded to Supabase Storage at seed time.
