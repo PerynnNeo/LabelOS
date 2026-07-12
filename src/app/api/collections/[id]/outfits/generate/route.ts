@@ -48,12 +48,20 @@ import {
  */
 export const runtime = "nodejs";
 
-const BATCH_SIZE = 10;
+// Smaller batches keep each structured composer response well under the token
+// ceiling (10 rich rankings could overflow 4096 and truncate). We also cap how
+// many candidates go to Claude — they are pre-sorted by the deterministic
+// heuristic, so the strongest CANDIDATE_LIMIT are more than enough to curate
+// six final looks, and it keeps the whole run inside a normal function timeout.
+const BATCH_SIZE = 6;
+const CANDIDATE_LIMIT = 24;
+const COMPOSER_MAX_TOKENS = 8192;
 
 interface GenerateResult {
   created: number;
   dropped: number;
   batches: number;
+  failedBatches: number;
 }
 
 export async function POST(
@@ -98,7 +106,7 @@ export async function POST(
 
       if (candidates.length === 0) {
         return apiOk<GenerateResult>(
-          { created: 0, dropped: 0, batches: 0 },
+          { created: 0, dropped: 0, batches: 0, failedBatches: 0 },
           requestId,
         );
       }
@@ -112,14 +120,14 @@ export async function POST(
         },
         async () => {
           const maxCalls = maxClaudeCallsPerRun();
-          const maxBatches = Math.min(
-            Math.ceil(candidates.length / BATCH_SIZE),
-            maxCalls,
-          );
+          const limit = Math.min(candidates.length, CANDIDATE_LIMIT);
+          const maxBatches = Math.min(Math.ceil(limit / BATCH_SIZE), maxCalls);
           const processed = candidates.slice(0, maxBatches * BATCH_SIZE);
 
           const rankingById = new Map<string, ComposerRanking["rankings"][number]>();
           let batches = 0;
+          let failedBatches = 0;
+          let lastBatchError: unknown = null;
 
           for (let i = 0; i < processed.length; i += BATCH_SIZE) {
             const batch = processed.slice(i, i + BATCH_SIZE);
@@ -140,24 +148,42 @@ export async function POST(
               productRecords,
             });
 
-            const { data } = await provider.structuredCall({
-              schema: composerRankingSchema,
-              schemaName: composerRequest.schemaName,
-              system: composerRequest.system,
-              user: composerRequest.user,
-              maxTokens: 4096,
-              route: "collections.outfits.generate",
-              entityId: id,
-            });
+            // One flaky batch (token cut-off, rate limit, invalid output) must
+            // not sink the whole run — log it and keep the batches that worked.
+            try {
+              const { data } = await provider.structuredCall({
+                schema: composerRankingSchema,
+                schemaName: composerRequest.schemaName,
+                system: composerRequest.system,
+                user: composerRequest.user,
+                maxTokens: COMPOSER_MAX_TOKENS,
+                route: "collections.outfits.generate",
+                entityId: id,
+              });
 
-            const validated = validateComposerOutput(
-              data,
-              batch.map((candidate) => candidate.candidateId),
-            );
-            for (const ranking of validated.rankings) {
-              rankingById.set(ranking.candidateId, ranking);
+              const validated = validateComposerOutput(
+                data,
+                batch.map((candidate) => candidate.candidateId),
+              );
+              for (const ranking of validated.rankings) {
+                rankingById.set(ranking.candidateId, ranking);
+              }
+              batches += 1;
+            } catch (batchError) {
+              failedBatches += 1;
+              lastBatchError = batchError;
+              console.error(
+                `[outfits.generate] composer batch ${i / BATCH_SIZE + 1} failed`,
+                batchError instanceof Error ? batchError.message : batchError,
+              );
             }
-            batches += 1;
+          }
+
+          // Every composer batch failed — surface the underlying provider error
+          // (classifyPipelineError maps AnthropicCallError to a friendly code)
+          // instead of silently returning an empty collection.
+          if (batches === 0 && failedBatches > 0 && lastBatchError) {
+            throw lastBatchError;
           }
 
           const inserts: OutfitInsert[] = [];
@@ -194,6 +220,7 @@ export async function POST(
             created: created.length,
             dropped: processed.length - created.length,
             batches,
+            failedBatches,
           };
 
           await logActivity({
@@ -220,7 +247,7 @@ export async function POST(
           status: "candidate",
         });
         return apiOk<GenerateResult>(
-          { created: existing.length, dropped: 0, batches: 0 },
+          { created: existing.length, dropped: 0, batches: 0, failedBatches: 0 },
           requestId,
         );
       }
